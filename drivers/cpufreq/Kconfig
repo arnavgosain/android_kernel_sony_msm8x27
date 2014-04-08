@@ -256,6 +256,11 @@ config CPU_FREQ_DEFAULT_GOV_DANCEDANCE
 	select CPU_FREQ_GOV_DANCEDANCE
 	help
 
+config CPU_FREQ_DEFAULT_GOV_NIGHTMARE
+    bool "nightmare"
+    select CPU_FREQ_GOV_NIGHTMARE
+    help
+	
 config CPU_FREQ_DEFAULT_GOV_SMARTMAX
         bool "smartmax"
         select CPU_FREQ_GOV_SMARTMAX
@@ -542,6 +547,10 @@ config CPU_FREQ_GOV_BADASS
 
 config CPU_FREQ_GOV_DANCEDANCE
 	tristate "'dancedance' cpufreq governor"
+	depends on CPU_FREQ
+	
+config CPU_FREQ_GOV_NIGHTMARE
+	tristate "'nightmare' cpufreq governor"
 	depends on CPU_FREQ
 
 config CPU_FREQ_GOV_SMARTMAX
