@@ -1570,9 +1570,9 @@ static int cm36283_probe(struct i2c_client *client,
     }
 
     lpi->irq = client->irq;
-    
+
     i2c_set_clientdata(client, lpi);
-    
+
     lpi->intr_pin = pdata->intr;
     lpi->adc_table = pdata->levels;
     lpi->power = pdata->power;
@@ -1582,23 +1582,23 @@ static int cm36283_probe(struct i2c_client *client,
 /*MTD-PERIPHERAL-CH-PS_conf00++[*/
 if(fih_get_product_phase() >= PHASE_TP2_MP)
 {
-	lpi->ps_away_thd_set = 0x0A;
-    lpi->ps_close_thd_set = 0x31;	
+	lpi->ps_away_thd_set = 0x5;
+    lpi->ps_close_thd_set = 0xa;
     lpi->ps_conf1_val = 0x4025;
 }
 else
 {
     lpi->ps_away_thd_set = pdata->ps_away_thd_set;
-    lpi->ps_close_thd_set = pdata->ps_close_thd_set;	
+    lpi->ps_close_thd_set = pdata->ps_close_thd_set;
     lpi->ps_conf1_val = pdata->ps_conf1_val;
 }
 	lpi->ps_conf3_val = pdata->ps_conf3_val;
 /*MTD-PERIPHERAL-CH-PS_conf00++]*/
-    
+
     lpi->ls_cmd  = pdata->ls_cmd;
-    
+
     lpi->record_clear_int_fail=0;
-    
+
     D("[PS][CM36283] %s: ls_cmd 0x%x\n",
         __func__, lpi->ls_cmd);
 
