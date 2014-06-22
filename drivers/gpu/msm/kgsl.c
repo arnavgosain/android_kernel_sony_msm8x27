@@ -54,6 +54,9 @@ MODULE_PARM_DESC(ksgl_mmu_type,
 
 static struct ion_client *kgsl_ion_client;
 
+static void kgsl_put_process_private(struct kgsl_device *device,
+			 struct kgsl_process_private *private);
+
 static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry);
 
 /*
@@ -438,7 +441,7 @@ kgsl_mem_entry_attach_process(struct kgsl_mem_entry *entry,
 	int ret;
 	struct kgsl_process_private *process = dev_priv->process_priv;
 
-	ret = kgsl_process_private_get(process);
+	ret = kref_get_unless_zero(&process->refcount);
 	if (!ret)
 		return -EBADF;
 
@@ -477,7 +480,7 @@ kgsl_mem_entry_attach_process(struct kgsl_mem_entry *entry,
 	return ret;
 
 err_put_proc_priv:
-	kgsl_process_private_put(process);
+	kgsl_put_process_private(dev_priv->device, process);
 	return ret;
 }
 
@@ -500,7 +503,7 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 
 	entry->priv->stats[entry->memtype].cur -= entry->memdesc.size;
 	spin_unlock(&entry->priv->mem_lock);
-	kgsl_process_private_put(entry->priv);
+	kgsl_put_process_private(entry->dev_priv->device, entry->priv);
 
 	entry->priv = NULL;
 }
@@ -544,26 +547,22 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
 		KGSL_DRV_INFO(device, "cannot have more than %d "
 				"ctxts due to memstore limitation\n",
 				KGSL_MEMSTORE_MAX);
+		write_lock(&device->context_lock);
+		idr_remove(&device->context_idr, id);
+		write_unlock(&device->context_lock);
 		ret = -ENOSPC;
-		goto fail_free_id;
+		goto func_end;
 	}
 
 	kref_init(&context->refcount);
-	/*
-	 * Get a refernce to the process private so its not destroyed, until
-	 * the context is destroyed. This will also prevent the pagetable
-	 * from being destroyed
-	 */
-	if (!kgsl_process_private_get(dev_priv->process_priv)) {
-		ret = -EBADF;
-		goto fail_free_id;
-	}
-
 	context->dev_priv = dev_priv;
+
 	ret = kgsl_sync_timeline_create(context);
 	if (ret) {
-		kgsl_process_private_put(dev_priv->process_priv);
-		goto fail_free_id;
+		write_lock(&device->context_lock);
+		idr_remove(&dev_priv->device->context_idr, id);
+		write_unlock(&device->context_lock);
+		goto func_end;
 	}
 
 	/* Initialize the pending event list */
@@ -579,13 +578,6 @@ kgsl_create_context(struct kgsl_device_private *dev_priv)
 	 */
 
 	INIT_LIST_HEAD(&context->events_list);
-
-fail_free_id:
-	if (ret) {
-		write_lock(&device->context_lock);
-		idr_remove(&device->context_idr, id);
-		write_unlock(&device->context_lock);
-	}
 
 func_end:
 	if (ret) {
@@ -633,6 +625,8 @@ kgsl_context_detach(struct kgsl_context *context)
 	idr_remove(&device->context_idr, id);
 	write_unlock(&device->context_lock);
 
+	context->dev_priv = NULL;
+
 	kgsl_context_put(context);
 }
 
@@ -642,7 +636,6 @@ kgsl_context_destroy(struct kref *kref)
 	struct kgsl_context *context = container_of(kref, struct kgsl_context,
 						    refcount);
 	kgsl_sync_timeline_destroy(context);
-	kgsl_process_private_put(context->dev_priv->process_priv);
 	kfree(context);
 }
 
@@ -930,8 +923,9 @@ static void kgsl_destroy_process_private(struct kref *kref)
 	return;
 }
 
-void
-kgsl_process_private_put(struct kgsl_process_private *private)
+static void
+kgsl_put_process_private(struct kgsl_device *device,
+			 struct kgsl_process_private *private)
 {
 	mutex_lock(&kgsl_driver.process_mutex);
 
@@ -945,33 +939,14 @@ kgsl_process_private_put(struct kgsl_process_private *private)
 	return;
 }
 
-/**
- * kgsl_process_private_find() - Find the process associated with the specified
- * name
- * @name: pid_t of the process to search for
- * Return the process struct for the given ID.
- */
-struct kgsl_process_private *kgsl_process_private_find(pid_t pid)
-{
-	struct kgsl_process_private *p, *private = NULL;
-
-	mutex_lock(&kgsl_driver.process_mutex);
-	list_for_each_entry(p, &kgsl_driver.process_list, list) {
-		if (p->pid == pid) {
-			if (kgsl_process_private_get(p))
-				private = p;
-			break;
-		}
-	}
-	mutex_unlock(&kgsl_driver.process_mutex);
-	return private;
-}
-
-/**
- * kgsl_process_private_new() - Helper function to search for process private
+/*
+ * find_process_private() - Helper function to search for process private
+ * @cur_dev_priv: Pointer to device private structure which contains pointers
+ * to device and process_private structs.
  * Returns: Pointer to the found/newly created private struct
  */
-static struct kgsl_process_private *kgsl_process_private_new(void)
+static struct kgsl_process_private *
+kgsl_find_process_private(struct kgsl_device_private *cur_dev_priv)
 {
 	struct kgsl_process_private *private;
 
@@ -979,16 +954,18 @@ static struct kgsl_process_private *kgsl_process_private_new(void)
 	mutex_lock(&kgsl_driver.process_mutex);
 	list_for_each_entry(private, &kgsl_driver.process_list, list) {
 		if (private->pid == task_tgid_nr(current)) {
-			if (!kgsl_process_private_get(private))
-				private = NULL;
+			kref_get(&private->refcount);
 			goto done;
 		}
 	}
 
 	/* no existing process private found for this dev_priv, create one */
 	private = kzalloc(sizeof(struct kgsl_process_private), GFP_KERNEL);
-	if (private == NULL)
+	if (private == NULL) {
+		KGSL_DRV_ERR(cur_dev_priv->device, "kzalloc(%d) failed\n",
+			sizeof(struct kgsl_process_private));
 		goto done;
+	}
 
 	kref_init(&private->refcount);
 
@@ -1010,11 +987,11 @@ done:
  * NULL if pagetable creation for this process private obj failed.
  */
 static struct kgsl_process_private *
-kgsl_get_process_private(struct kgsl_device *device)
+kgsl_get_process_private(struct kgsl_device_private *cur_dev_priv)
 {
 	struct kgsl_process_private *private;
 
-	private = kgsl_process_private_new();
+	private = kgsl_find_process_private(cur_dev_priv);
 
 	if (!private)
 		return NULL;
@@ -1031,30 +1008,25 @@ kgsl_get_process_private(struct kgsl_device *device)
 		unsigned long pt_name;
 
 		pt_name = task_tgid_nr(current);
-		private->pagetable =
-			kgsl_mmu_getpagetable(pt_name);
-		if (private->pagetable == NULL)
-			goto error;
+		private->pagetable = kgsl_mmu_getpagetable(pt_name);
+		if (private->pagetable == NULL) {
+			mutex_unlock(&private->process_private_mutex);
+			kgsl_put_process_private(cur_dev_priv->device,
+						private);
+			return NULL;
+		}
 	}
 
-	if (kgsl_process_init_sysfs(private))
-		goto error;	
-	
-	if (kgsl_process_init_debugfs(private))
-		goto error;
+	kgsl_process_init_sysfs(private);
+	kgsl_process_init_debugfs(private);
 
 	set_bit(KGSL_PROCESS_INIT, &private->priv);
 
 done:
 	mutex_unlock(&private->process_private_mutex);
+
 	return private;
-
-error:
-	mutex_unlock(&private->process_private_mutex);
-	kgsl_process_private_put(private);
-	return NULL;
 }
-
 
 static int kgsl_release(struct inode *inodep, struct file *filep)
 {
@@ -1127,7 +1099,7 @@ static int kgsl_release(struct inode *inodep, struct file *filep)
 	mutex_unlock(&device->mutex);
 	kfree(dev_priv);
 
-	kgsl_process_private_put(private);
+	kgsl_put_process_private(device, private);
 
 	pm_runtime_put(device->parentdev);
 	return result;
@@ -1204,7 +1176,7 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
 	 * after the first start so that the global pagetable mappings
 	 * are set up before we create the per-process pagetable.
 	 */
-	dev_priv->process_priv = kgsl_get_process_private(device);
+	dev_priv->process_priv = kgsl_get_process_private(dev_priv);
 	if (dev_priv->process_priv ==  NULL) {
 		result = -ENOMEM;
 		goto err_stop;
