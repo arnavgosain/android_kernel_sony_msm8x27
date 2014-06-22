@@ -42,12 +42,6 @@ config IOSCHED_ROW
 	  manner when the dispatch quantum for each queue is calculated
 	  according to queue priority.
 	  Most suitable for mobile devices.
-	  
-config IOSCHED_TRIPNDROID
-	tristate "Tripndroid"
-	default y
-	---help---
-	  The Trip N Droid scheduler
 
 config IOSCHED_CFQ
 	tristate "CFQ I/O scheduler"
@@ -152,9 +146,6 @@ choice
 
 	config DEFAULT_FIOPS
 		bool "FIOPS" if IOSCHED_FIOPS=y
-		
-	config DEFAULT_TRIPNDROID
-		bool "TRIPNDROID" if IOSCHED_TRIPNDROID=y
 
 endchoice
 
@@ -167,7 +158,6 @@ config DEFAULT_IOSCHED
 	default "noop" if DEFAULT_NOOP
 	default "fiops" if DEFAULT_FIOPS
 	default "sio" if DEFAULT_SIO
-	default "tripndroid" if DEFAULT_TRIPNDROID
 
 endmenu
 
