@@ -4737,7 +4737,6 @@ int msm_fb_v4l2_update(void *par,
 #endif
 }
 EXPORT_SYMBOL(msm_fb_v4l2_update);
-module_param(align_buffer, bool, 0644);
 
 module_param(align_buffer, bool, 0644);
 
