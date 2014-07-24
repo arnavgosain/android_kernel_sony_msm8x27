@@ -29,6 +29,9 @@
 
 #include <asm/ioctls.h>
 
+static unsigned int enabled = 1;
+module_param(enabled, uint, S_IWUSR | S_IRUGO);
+
 /*
  * struct logger_log - represents a specific log, such as 'main' or 'radio'
  *
@@ -452,6 +455,9 @@ ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	struct timespec now;
 	ssize_t ret = 0;
 
+	if (!enabled)
+		return 0;
+
 	now = current_kernel_time();
 
 	header.pid = current->tgid;
@@ -728,10 +734,10 @@ static struct logger_log VAR = { \
 	.size = SIZE, \
 };
 
-DEFINE_LOGGER_DEVICE(log_main, LOGGER_LOG_MAIN, 256*1024)
-DEFINE_LOGGER_DEVICE(log_events, LOGGER_LOG_EVENTS, 256*1024)
-DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 256*1024)
-DEFINE_LOGGER_DEVICE(log_system, LOGGER_LOG_SYSTEM, 256*1024)
+DEFINE_LOGGER_DEVICE(log_main, LOGGER_LOG_MAIN, 128*1024)
+DEFINE_LOGGER_DEVICE(log_events, LOGGER_LOG_EVENTS, 64*1024)
+DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 64*1024)
+DEFINE_LOGGER_DEVICE(log_system, LOGGER_LOG_SYSTEM, 128*1024)
 
 static struct logger_log *get_log_from_minor(int minor)
 {
