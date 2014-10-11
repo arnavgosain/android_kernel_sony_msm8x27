@@ -12,16 +12,8 @@ if [ -z "$days" ]; then
 fi
 
 changelog=changelog.html
-
-for i in $(seq $days);
-do
-        export after_date=`date --date="$i days ago" +%m/%d/%Y`
-        k=$(expr $i - 1)
-        export until_date=`date --date="$k days ago" +%m/%d/%Y`
-        echo '>[ ' $release ' ]<' "</br>"  >> $changelog
-        echo >> $changelog;
-        git log --format="| https://github.com/nolinuxnoparty/android_kernel_sony_msm8x27/commit/%h | %s | %an </br>" --reverse --after=$after_date --until=$until_date >> $changelog
-        echo >> $changelog;
-done
-
+echo '[ ' $release ' ]' ' </br>'  >> $changelog
+echo >> $changelog;
+git log --format="| https://github.com/nolinuxnoparty/android_kernel_sony_msm8x27/commit/%h | %s | %an </br>" --reverse --since=$days.days.ago >> $changelog
+echo >> $changelog;
 mv changelog.html ~/nolinuxnoparty.github.io/nicki/hodor/changelog.html
