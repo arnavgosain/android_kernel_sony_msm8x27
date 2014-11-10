@@ -58,6 +58,12 @@ config IOSCHED_CFQ
 
 	  Note: If BLK_CGROUP=m, then CFQ can be built only as module.
 
+config IOSCHED_FIFO
+ 	 bool
+ 	 default y
+ 	 ---help---
+ 	 Fifo is similar to no-op I/O scheduler and it's a minimal scheduler that does basic merging and sorting.
+
 config CFQ_GROUP_IOSCHED
 	bool "CFQ Group Scheduling support"
 	depends on IOSCHED_CFQ && BLK_CGROUP
@@ -119,6 +125,12 @@ config IOSCHED_VR
           Requests are chosen according to SSTF with a penalty of rev_penalty
           for switching head direction.
 
+config IOSCHED_TRIPNDROID
+	tristate "Tripndroid"
+	default y
+	---help---
+	  The Trip N Droid scheduler
+
 choice
 	prompt "Default I/O scheduler"
 	default DEFAULT_CFQ
@@ -170,6 +182,12 @@ choice
         config DEFAULT_VR
                 bool "VR" if IOSCHED_VR=y
 
+        config DEFAULT_FIFO
+                bool "fifo" if IOSCHED_FIFO=y
+
+	config DEFAULT_TRIPNDROID
+		bool "TRIPNDROID" if IOSCHED_TRIPNDROID=y
+
 endchoice
 
 config DEFAULT_IOSCHED
@@ -179,11 +197,13 @@ config DEFAULT_IOSCHED
 	default "cfq" if DEFAULT_CFQ
 	default "bfq" if DEFAULT_BFQ
 	default "noop" if DEFAULT_NOOP
-        default "bfq" if DEFAULT_BFQ
-        default "sio" if DEFAULT_SIO
-        default "fiops" if DEFAULT_FIOPS
-        default "zen" if DEFAULT_ZEN
-        default "vr" if DEFAULT_VR
+    default "bfq" if DEFAULT_BFQ
+    default "sio" if DEFAULT_SIO
+    default "fiops" if DEFAULT_FIOPS
+    default "zen" if DEFAULT_ZEN
+    default "vr" if DEFAULT_VR
+	default "tripndroid" if DEFAULT_TRIPNDROID
+    default "fifo" if DEFAULT_FIFO
 
 endmenu
 
